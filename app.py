@@ -94,7 +94,7 @@ if uploaded_file is not None:
             color="dodgerblue",
         )
         ax.set_ylabel("Sales")
-        plt.xticks(rotation=45)
+        #plt.xticks(rotation=45)
         st.pyplot(fig)
 
       with c2:
