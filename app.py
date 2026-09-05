@@ -354,28 +354,6 @@ st.download_button(
 # Download Excel
 # ==========================
 
-output = BytesIO()
-
-with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-    filtered_df.to_excel(
-        writer,
-        index=False,
-        sheet_name="Sales"
-    )
-
-excel_data = output.getvalue()
-
-st.download_button(
-    label="📥 Download Excel",
-    data=excel_data,
-    file_name="filtered_sales.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-)
-
-# ==========================
-# Footer
-# ==========================
-
 st.divider()
 
 st.markdown(
