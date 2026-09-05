@@ -1,110 +1,399 @@
-import matplotlib.pyplot as plt
-import pandas as pd
+
 import streamlit as st
+import pandas as pd
+import plotly.express as px
+from io import BytesIO
 
-st.set_page_config(page_title="Sales Analytics Dashboard", layout="wide")
-
-st.title("📊 Enterprise Sales Analytics Dashboard")
-st.write(
-    "Upload your sales dataset to explore dynamic KPIs, charts, and data"
-    " tables."
+st.set_page_config(
+    page_title="Professional Sales Dashboard",
+    page_icon="📊",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
+
+st.markdown("""
+<style>
+.main {
+    background-color: #f8f9fa;
+}
+
+div[data-testid="metric-container"] {
+    background-color: white;
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0px 2px 8px rgba(0,0,0,0.1);
+}
+
+h1 {
+    color: #1f77b4;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+@st.cache_data
+def load_data(uploaded_file):
+    if uploaded_file is not None:
+        return pd.read_csv(uploaded_file)
+    return pd.read_csv("data/sales.csv")
+
+
+st.title("📊 Professional Sales Dashboard")
+st.write("Interactive Business Intelligence Dashboard")
 
 uploaded_file = st.sidebar.file_uploader(
-    "Upload Sales CSV File", type=["csv"]
+    "Upload CSV File",
+    type=["csv"]
 )
 
-if uploaded_file is not None:
-  df = pd.read_csv(uploaded_file)
+df = load_data(uploaded_file)
 
-  st.sidebar.success("File uploaded successfully!")
+df["date"] = pd.to_datetime(df["date"])
 
-  st.sidebar.header("Filter Options")
+st.sidebar.header("Filters")
 
-  if "Region" in df.columns and "Category" in df.columns:
-    regions = df["Region"].unique()
-    selected_region = st.sidebar.selectbox(
-        "Select Region", ["All"] + list(regions)
+products = sorted(df["product"].unique())
+
+selected_products = st.sidebar.multiselect(
+    "Select Products",
+    products,
+    default=products
+)
+
+start_date = st.sidebar.date_input(
+    "Start Date",
+    df["date"].min()
+)
+
+end_date = st.sidebar.date_input(
+    "End Date",
+    df["date"].max()
+)
+
+filtered_df = df[
+    (df["product"].isin(selected_products))
+    &
+    (df["date"] >= pd.to_datetime(start_date))
+    &
+    (df["date"] <= pd.to_datetime(end_date))
+]
+
+# ==========================
+# KPIs
+# ==========================
+
+total_revenue = filtered_df["revenue"].sum()
+total_sales = filtered_df["quantity"].sum()
+total_orders = len(filtered_df)
+average_revenue = filtered_df["revenue"].mean()
+
+best_product = (
+    filtered_df.groupby("product")["revenue"]
+    .sum()
+    .idxmax()
+    if not filtered_df.empty else "N/A"
+)
+
+st.markdown("## 📌 Key Performance Indicators")
+
+col1, col2, col3, col4, col5 = st.columns(5)
+
+col1.metric(
+    "💰 Revenue",
+    f"${total_revenue:,.2f}"
+)
+
+col2.metric(
+    "🛒 Sales",
+    f"{total_sales:,}"
+)
+
+col3.metric(
+    "📦 Orders",
+    f"{total_orders:,}"
+)
+
+col4.metric(
+    "📈 Avg Revenue",
+    f"${average_revenue:,.2f}"
+)
+
+col5.metric(
+    "🏆 Best Product",
+    best_product
+)
+
+st.divider()
+
+# ==========================
+# Analytics
+# ==========================
+
+product_revenue = (
+    filtered_df.groupby("product")["revenue"]
+    .sum()
+    .reset_index()
+)
+
+daily_revenue = (
+    filtered_df.groupby("date")["revenue"]
+    .sum()
+    .reset_index()
+)
+
+left, right = st.columns(2)
+
+with left:
+
+    fig_bar = px.bar(
+        product_revenue,
+        x="product",
+        y="revenue",
+        color="revenue",
+        text_auto=".2s",
+        title="Revenue by Product"
     )
 
-    categories = df["Category"].unique()
-    selected_category = st.sidebar.selectbox(
-        "Select Category", ["All"] + list(categories)
+    fig_bar.update_layout(
+        xaxis_title="Product",
+        yaxis_title="Revenue",
+        template="plotly_white"
     )
 
-    filtered_df = df.copy()
-    if selected_region != "All":
-      filtered_df = filtered_df[filtered_df["Region"] == selected_region]
+    st.plotly_chart(
+        fig_bar,
+        use_container_width=True
+    )
 
-    if selected_category != "All":
-      filtered_df = filtered_df[filtered_df["Category"] == selected_category]
-  else:
-    filtered_df = df
-    st.warning("Columns 'Region' or 'Category' not found in CSV. Showing all data.")
+with right:
 
-  st.subheader("Key Performance Indicators (KPIs)")
+    fig_line = px.line(
+        daily_revenue,
+        x="date",
+        y="revenue",
+        markers=True,
+        title="Daily Revenue Trend"
+    )
 
-  total_sales = (
-      filtered_df["Sales"].sum() if "Sales" in filtered_df.columns else 0
-  )
-  total_orders = len(filtered_df)
-  avg_sales = (
-      filtered_df["Sales"].mean() if "Sales" in filtered_df.columns else 0
-  )
+    fig_line.update_layout(
+        template="plotly_white"
+    )
 
-  col1, col2, col3 = st.columns(3)
-  col1.metric("Total Sales", f"${total_sales:,.2f}")
-  col2.metric("Total Orders", f"{total_orders:,}")
-  col3.metric("Average Sale", f"${avg_sales:,.2f}")
+    st.plotly_chart(
+        fig_line,
+        use_container_width=True
+    )
 
-  st.markdown("---")
+st.divider()
 
-  tab1, tab2 = st.tabs(["Visual Charts", "Filtered Dataset"])
+# ==========================
+# Pie Chart
+# ==========================
 
-  with tab1:
-    st.subheader("Sales Visualization")
+pie = px.pie(
+    product_revenue,
+    names="product",
+    values="revenue",
+    hole=0.45,
+    title="Revenue Distribution"
+)
 
-    if (
-        "Date" in filtered_df.columns
-        and "Sales" in filtered_df.columns
-        and not filtered_df.empty
-    ):
-      c1, c2 = st.columns(2)
+st.plotly_chart(
+    pie,
+    use_container_width=True
+)
 
-      with c1:
-        st.write("Sales Trend Over Time")
-        fig, ax = plt.subplots(figsize=(6, 4))
-        sales_by_date = filtered_df.groupby("Date")["Sales"].sum()
-        ax.plot(
-            sales_by_date.index,
-            sales_by_date.values,
-            marker="o",
-            color="dodgerblue",
-        )
-        ax.set_ylabel("Sales")
-        plt.xticks(rotation=90)
-        st.pyplot(fig)
+# ==========================
+# Monthly Revenue Analysis
+# ==========================
 
-      with c2:
-        st.write("Sales by Category")
-        if "Category" in filtered_df.columns:
-          fig2, ax2 = plt.subplots(figsize=(6, 4))
-          sales_by_cat = filtered_df.groupby("Category")["Sales"].sum()
-          ax2.bar(
-              sales_by_cat.index, sales_by_cat.values, color=["teal", "coral"]
-          )
-          ax2.set_ylabel("Sales")
-          st.pyplot(fig2)
-    else:
-      st.info(
-          "Please ensure your CSV contains 'Date', 'Sales', and 'Category'"
-          " columns to display charts."
-      )
+monthly_df = filtered_df.copy()
 
-  with tab2:
-    st.subheader("Dataset View")
-    st.write(f"Showing {len(filtered_df)} rows after applying filters.")
-    st.dataframe(filtered_df)
+monthly_df["Month"] = monthly_df["date"].dt.strftime("%Y-%m")
 
-else:
-  st.info("👈 Please upload a CSV file from the sidebar to start the analysis.")
+monthly_revenue = (
+    monthly_df
+    .groupby("Month")["revenue"]
+    .sum()
+    .reset_index()
+)
+
+st.subheader("📅 Monthly Revenue")
+
+fig_month = px.area(
+    monthly_revenue,
+    x="Month",
+    y="revenue",
+    color_discrete_sequence=["#1f77b4"]
+)
+
+fig_month.update_layout(
+    template="plotly_white",
+    xaxis_title="Month",
+    yaxis_title="Revenue"
+)
+
+st.plotly_chart(
+    fig_month,
+    use_container_width=True
+)
+
+# ==========================
+# Top Products
+# ==========================
+
+st.subheader("🏆 Top Products")
+
+top_products = (
+    filtered_df
+    .groupby("product")["revenue"]
+    .sum()
+    .sort_values(ascending=False)
+    .reset_index()
+)
+
+fig_top = px.bar(
+    top_products,
+    x="revenue",
+    y="product",
+    orientation="h",
+    color="revenue",
+    text_auto=".2s"
+)
+
+fig_top.update_layout(
+    template="plotly_white",
+    yaxis=dict(categoryorder="total ascending")
+)
+
+st.plotly_chart(
+    fig_top,
+    use_container_width=True
+)
+
+# ==========================
+# Revenue by Quantity
+# ==========================
+
+st.subheader("📦 Quantity vs Revenue")
+
+fig_scatter = px.scatter(
+    filtered_df,
+    x="quantity",
+    y="revenue",
+    color="product",
+    size="revenue",
+    hover_data=["date"]
+)
+
+fig_scatter.update_layout(
+    template="plotly_white"
+)
+
+st.plotly_chart(
+    fig_scatter,
+    use_container_width=True
+)
+
+# ==========================
+# Data Preview
+# ==========================
+
+st.subheader("📄 Filtered Data")
+
+st.dataframe(
+    filtered_df,
+    use_container_width=True,
+    hide_index=True
+)
+
+# ==========================
+# Statistics
+# ==========================
+
+st.subheader("📈 Summary Statistics")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    st.write(filtered_df.describe())
+
+with col2:
+
+    st.write("### Revenue Statistics")
+
+    st.metric(
+        "Maximum Revenue",
+        f"${filtered_df['revenue'].max():,.2f}"
+    )
+
+    st.metric(
+        "Minimum Revenue",
+        f"${filtered_df['revenue'].min():,.2f}"
+    )
+
+    st.metric(
+        "Average Revenue",
+        f"${filtered_df['revenue'].mean():,.2f}"
+    )
+
+# ==========================
+# Download CSV
+# ==========================
+
+csv = filtered_df.to_csv(index=False).encode("utf-8")
+
+st.download_button(
+    label="📥 Download CSV",
+    data=csv,
+    file_name="filtered_sales.csv",
+    mime="text/csv"
+)
+
+# ==========================
+# Download Excel
+# ==========================
+
+output = BytesIO()
+
+with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+    filtered_df.to_excel(
+        writer,
+        index=False,
+        sheet_name="Sales"
+    )
+
+excel_data = output.getvalue()
+
+st.download_button(
+    label="📥 Download Excel",
+    data=excel_data,
+    file_name="filtered_sales.xlsx",
+    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+)
+
+# ==========================
+# Footer
+# ==========================
+
+st.divider()
+
+st.markdown(
+    """
+    <center>
+        <h4>📊 Professional Sales Dashboard</h4>
+        <p>Built with ❤️ using Streamlit, Pandas and Plotly</p>
+    </center>
+    """,
+    unsafe_allow_html=True
+)
+
+st.sidebar.info("""
+Professional Sales Dashboard
+
+Version 1.0
+Built with:
+- Streamlit
+- Pandas
+- Plotly
+""")
